@@ -2,6 +2,7 @@ import tensorflow as tf
 import pandas as pd
 import numpy as np
 import os
+import matplotlib.pyplot as plt
 
 
 
@@ -15,6 +16,7 @@ class siamese:
 		#placeholder objects for categorical targets
 		self.y1 = tf.placeholder(tf.float32, [None])
 		self.y2 = tf.placeholder(tf.float32, [None])
+		self.nrows = tf.placeholder(tf.int32, [None])
 
 		with tf.variable_scope("siamese") as scope:
 			#output from network 1
@@ -76,10 +78,10 @@ class siamese:
 			D = r - 2*tf.matmul(A, tf.transpose(A)) + tf.transpose(r)
 
 			#set diagonal, i.e. the distance of a point to itself, to a large number
-			D_normalised = tf.matrix_set_diag(D, tf.constant(1000.0, shape=[1]))
+			D_normalised = tf.matrix_set_diag(D, tf.fill(self.nrows, value=1000.0))
 
 			#take the index number of the point closest to the point in question 
-			closest = tf.argmin(D, 1)
+			closest = tf.argmin(D_normalised, 1)
 
 			#create a vector of the label number of the closest point to a given point
 			closest_label = tf.gather(params=all_labels, indices=closest)
@@ -159,12 +161,11 @@ if __name__ == "__main__":
 
 		#train the network
 		np.random.seed(101)
-		for step in range(5000):
+		for step in range(1000):
 
-			if step % 100 == 0:
-				for root, dirs, files in os.walk("/home/leon/Documents/projects/data/sports/data_fewer_files/"):
+			if step % 10 == 0:
+				for root, dirs, files in os.walk("/home/leon/Documents/projects/data/sports/data_small_files/"):
 					file = np.random.choice(files)
-					print(file)
 					data = pd.read_csv(os.path.join(root, file), header=None)
 
 				#separate data into train and test sets
@@ -211,21 +212,24 @@ if __name__ == "__main__":
 			#Main target variable values 
 			batch_y = [float(x == y) for x, y in zip(batch_y1, batch_y2)]
 
-			#the set of different values the categorical target variables can take
-			y_values = list(set(np.concatenate([batch_y1, batch_y2, Y_test1])))
-			#a dictionary to convert the categorical target variables into numbers. dummy coding is not necessary
-			number_dict = {x:y for x,y in zip(y_values, range(len(y_values)))}
-			print(number_dict)
 
-			#convert categorical target variables to numbers
-			batch_y1 = np.array([number_dict[x] for x in batch_y1])
-			batch_y2 = np.array([number_dict[x] for x in batch_y2])
 
 
 			#convert categorical target variables to numbers only in the first step
 			if 0 not in Y_test1:
+				#the set of different values the categorical target variables can take
+
+				y_values = list(set(np.concatenate([batch_y1, batch_y2, Y_test1])))
+				#a dictionary to convert the categorical target variables into numbers. dummy coding is not necessary
+				number_dict = {x:y for x,y in zip(y_values, range(len(y_values)))}
+				
 				Y_test1 = np.array([number_dict[x] for x in Y_test1])
 				Y_test2 = np.array([number_dict[x] for x in Y_test2])
+
+
+			#convert categorical target variables to numbers
+			batch_y1 = np.array([number_dict[x] for x in batch_y1])
+			batch_y2 = np.array([number_dict[x] for x in batch_y2])
 
 			#train the network
 			summary, _, neg, pos, x1, o1, x2, o2 = sess.run([summary_op, siam.train, siam.neg, siam.pos, siam.x1, siam.o1, siam.x2, siam.o2], feed_dict={
@@ -233,22 +237,39 @@ if __name__ == "__main__":
 																	siam.x2: batch_x2,
 																	siam.y_: batch_y,
 																	siam.y1: batch_y1,
-																	siam.y2: batch_y2
+																	siam.y2: batch_y2,
+																	siam.nrows: [len(batch_y1) + len(batch_y2)]
 																	})
 
-			print("neg: {} \npos: {} \nx1: {} \no1: {} \nx2: {} \no2: {}".format(neg, pos, x1, o1, x2, o2))
+			#print("neg: {} \npos: {} \nx1: {} \no1: {} \nx2: {} \no2: {}".format(neg, pos, x1, o1, x2, o2))
 
-			#write loss and accuracy to summary objects
-			train_writer.add_summary(summary, step)
-			test_writer.add_summary(summary_result, step)
+
+			#test the network
+			if step % 20 == 0:
+
+				summary_result, acc = sess.run([summary_op, siam.accuracy], feed_dict={
+															siam.x1: batch_x1,
+															siam.x2: batch_x2,
+															siam.y_: batch_y,
+															siam.y1: batch_y1,
+															siam.y2: batch_y2,
+															siam.nrows: [len(batch_y1) + len(batch_y2)]
+															})
+
+				print("Step: ", step, ": accuracy = ", acc)
+
+				#write loss and accuracy to summary objects
+				train_writer.add_summary(summary, step)
+				test_writer.add_summary(summary_result, step)
 
 		saver.save(sess, './model')
 
-		
-		embed = siam.o1.eval({siam.x1: X_test})
+		embed = siam.o1.eval({siam.x1: np.concatenate([batch_x1, batch_x2], axis=0)})
 
-	embed = pd.concat([pd.DataFrame(embed), pd.DataFrame(Y_test1)], axis=1)
-	print(embed)
+		embed = pd.concat([pd.DataFrame(embed), pd.DataFrame(np.concatenate([batch_y1, batch_y2], axis=0))], axis=1)
+		plt.scatter(x=embed.iloc[:,0], y=embed.iloc[:,1], c=embed.iloc[:,2])
+		plt.plot()	
+
 
 	pd.DataFrame(embed).to_csv("./embed.txt", header=False, index=False)
 
