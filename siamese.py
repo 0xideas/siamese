@@ -11,8 +11,8 @@ class siamese:
 
 	def __init__(self, learning_rate):
 		#placeholder objects for inputs
-		self.x1 = tf.placeholder(tf.float32, [None, 45])
-		self.x2 = tf.placeholder(tf.float32, [None, 45])
+		self.x1 = tf.placeholder(tf.float32, [None, 135])
+		self.x2 = tf.placeholder(tf.float32, [None, 135])
 		#placeholder objects for categorical targets
 		self.y1 = tf.placeholder(tf.float32, [None])
 		self.y2 = tf.placeholder(tf.float32, [None])
@@ -30,7 +30,7 @@ class siamese:
 		#loss computed from the two outputs of the network and the main target
 		self.loss = self.loss_function()
 		#training function
-		self.train = tf.train.AdamOptimizer(learning_rate).minimize(self.loss)
+		self.train = tf.train.MomentumOptimizer(learning_rate, 0.05).minimize(self.loss)
 		self.accuracy = self.evaluate()
 
 
@@ -56,9 +56,9 @@ class siamese:
 		"""Constructs a fully connected neural network. Takes an input
 		placeholder object, an output size and a name."""
 
-		layer_1 = self.fc_layer(input_, "layer1", 30, tf.nn.relu)
+		layer_1 = self.fc_layer(input_, "layer1", 50, tf.nn.relu)
 
-		layer_2 = self.fc_layer(layer_1, "layer2", 20, tf.nn.relu)
+		layer_2 = self.fc_layer(layer_1, "layer2", 40, tf.nn.relu)
 
 		encoded = self.fc_layer(layer_2, "output", output_size, tf.nn.relu)
 
@@ -201,9 +201,13 @@ if __name__ == "__main__":
 			if loss_delta > loss_threshold:
 
 				if step % 10 == 0:
-					for root, dirs, files in os.walk("/home/leon/Documents/projects/data/sports/data_small_files/"):
+					for root, dirs, files in os.walk("/home/leon/Documents/projects/data/sports/data_three_back/"):
 						file = np.random.choice(files)
 						data = pd.read_csv(os.path.join(root, file), header=None)
+
+						while not any([x in data[:-1].values for x in test_persons]):
+							file = np.random.choice(files)
+							data = pd.read_csv(os.path.join(root, file), header=None)
 
 					#separate data into train and test sets
 					test_ind = np.array([x in test_persons for x in data.iloc[:,-1].values])
