@@ -1,9 +1,17 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 
-embeds = pd.read_csv("/home/leon/Documents/projects/siamese/embed.txt")
-print(embeds)
-print(embeds.iloc[:,0])
 
-plt.scatter(x=embeds.iloc[:,0], y=embeds.iloc[:,1], c=embeds.iloc[:,2])
-plt.show()
+if __name__ == "__main__":
+	embeds = pd.read_csv("/home/leon/Documents/projects/siamese/embed.txt")
+
+	colours = ['red', 'green', 'blue', 'yellow', 'purple']
+	fig, ax = plt.subplots()
+	for activity, colour in zip(sorted(list(set(embeds.iloc[:,2]))), colours):
+		em = embeds[embeds.iloc[:,2] == activity]
+		ax.scatter(em.iloc[:,0], em.iloc[:,1], c=colour,label=activity,alpha=0.3, edgecolors='none')
+
+	ax.legend()
+	ax.grid(True)
+
+	plt.show()

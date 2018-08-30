@@ -30,7 +30,7 @@ class siamese:
 		#loss computed from the two outputs of the network and the main target
 		self.loss = self.loss_function()
 		#training function
-		self.train = tf.train.GradientDescentOptimizer(learning_rate).minimize(self.loss)
+		self.train = tf.train.AdamOptimizer(learning_rate).minimize(self.loss)
 		self.accuracy = self.evaluate()
 
 
@@ -128,6 +128,37 @@ class siamese:
 			return(loss)
 
 
+def split_sample_contrastive(X, Y, number_dict):
+
+	if X.shape[0] % 2 != 0:
+		X = X.iloc[:-1,:]
+		Y = Y[:-1]
+
+	X = X.reset_index(drop=True)
+	Y = Y.reset_index(drop=True)
+
+	#sequence in which data will be sampled from the training data set
+	sample_sequence = np.arange(X.shape[0])
+	np.random.shuffle(sample_sequence)
+	#create the index for values in X_train that go into the first and second network
+	batch_ind = sample_sequence >= X.shape[0]/2
+	#these unwieldy things first reorder X_train or Y_train, respectively, 
+	#according to the random sequence, then sample them into batch 1 or 2
+	x1 = X.T[sample_sequence].T[batch_ind == True].values
+	y1 = Y[sample_sequence][batch_ind == True].values
+	x2 = X.T[sample_sequence].T[batch_ind == False].values
+	y2 = Y[sample_sequence][batch_ind == False].values
+
+	#Main target variable values 
+	y = [float(x == y) for x, y in zip(y1, y2)]
+
+	if 0 not in y1:
+		y1 = pd.Series(np.array([number_dict[x] for x in y1]))
+		y2 = pd.Series(np.array([number_dict[x] for x in y2]))
+
+	return(x1, y1, x2, y2, y)
+
+
 
 if __name__ == "__main__":
 
@@ -157,118 +188,93 @@ if __name__ == "__main__":
 		init = tf.global_variables_initializer()
 		sess.run(init)
 
-		test_persons = ["p3", "p7", "p4"]
+		test_persons = ["p1", "p3", "p6"]
+
+		prev_loss = [50]*50
+		loss_threshold = 0
+		loss_delta, loss = 3, 50
 
 		#train the network
 		np.random.seed(101)
-		for step in range(1000):
+		for step in range(10000):
 
-			if step % 10 == 0:
-				for root, dirs, files in os.walk("/home/leon/Documents/projects/data/sports/data_small_files/"):
-					file = np.random.choice(files)
-					data = pd.read_csv(os.path.join(root, file), header=None)
+			if loss_delta > loss_threshold:
 
-				#separate data into train and test sets
-				test_ind = np.array([x in test_persons for x in data.iloc[:,-1].values])
+				if step % 10 == 0:
+					for root, dirs, files in os.walk("/home/leon/Documents/projects/data/sports/data_small_files/"):
+						file = np.random.choice(files)
+						data = pd.read_csv(os.path.join(root, file), header=None)
 
-				#creating test data and target objects
-				test = data[test_ind]
-				X_test = test.iloc[:,:-2]
-				X_test2 = X_test.sample(frac=1)
+					#separate data into train and test sets
+					test_ind = np.array([x in test_persons for x in data.iloc[:,-1].values])
 
+					#creating test data and target objects
+					test = data[test_ind]
+					X_test = test.iloc[:,:-2]
+					Y_test = test.iloc[:,-1]
 
-				Y_test1 = test.iloc[:,-1][X_test.index].values
-				Y_test2 = test.iloc[:,-1][X_test2.index].values
+					train = data[test_ind == False]
 
-				#target for the siamese network
-				Y_test = (Y_test1 ==  Y_test2).astype("float")
+					X_train = train.iloc[:,:-2]
+					Y_train = train.iloc[:,-1]
 
-				#creating the training data and target objects
-				train = data[test_ind == False]
+					Y_values = list(set(np.concatenate([Y_train.values, Y_test.values])))
+					number_dict = {x:y for x,y in zip(Y_values, range(len(Y_values)))}
+
+					X_test1, Y_test1, X_test2, Y_test2, Y_test = split_sample_contrastive(X_test, Y_test, number_dict)
+
 				X_train = train.iloc[:,:-2]
 				Y_train = train.iloc[:,-1]
+				X_train1, Y_train1, X_train2, Y_train2, Y_train = split_sample_contrastive(X_train, Y_train, number_dict)
 
-				#ensure the number of rows is even
-				if X_train.shape[0] % 2 != 0:
-					X_train = X_train.iloc[:-1,:]
-					Y_train = Y_train[:-1]
-
-				X_train = X_train.reset_index(drop=True)
-				Y_train = Y_train.reset_index(drop=True)
-
-
-			#sequence in which data will be sampled from the training data set
-			sample_sequence = np.arange(X_train.shape[0])
-			np.random.shuffle(sample_sequence)
-			#create the index for values in X_train that go into the first and second network
-			batch_ind = sample_sequence >= X_train.shape[0]/2
-			#these unwieldy things first reorder X_train or Y_train, respectively, 
-			#according to the random sequence, then sample them into batch 1 or 2
-			batch_x1 = X_train.T[sample_sequence].T[batch_ind == True].values
-			batch_y1 = Y_train[sample_sequence][batch_ind].values
-			batch_x2 = X_train.T[sample_sequence].T[batch_ind == False].values
-			batch_y2 = Y_train[sample_sequence][batch_ind == False].values
-
-			#Main target variable values 
-			batch_y = [float(x == y) for x, y in zip(batch_y1, batch_y2)]
+				#train the network
+				summary, _, loss = sess.run([summary_op, siam.train, siam.loss], feed_dict={
+																		siam.x1: X_train1,
+																		siam.x2: X_train2,
+																		siam.y_: Y_train,
+																		siam.y1: Y_train1,
+																		siam.y2: Y_train2,
+																		siam.nrows: [len(Y_train)*2]
+																		})
 
 
 
 
-			#convert categorical target variables to numbers only in the first step
-			if 0 not in Y_test1:
-				#the set of different values the categorical target variables can take
+				#test the network
+				if step % 20 == 0:
 
-				y_values = list(set(np.concatenate([batch_y1, batch_y2, Y_test1])))
-				#a dictionary to convert the categorical target variables into numbers. dummy coding is not necessary
-				number_dict = {x:y for x,y in zip(y_values, range(len(y_values)))}
-				
-				Y_test1 = np.array([number_dict[x] for x in Y_test1])
-				Y_test2 = np.array([number_dict[x] for x in Y_test2])
+					loss_delta = np.mean(prev_loss) - loss
+					prev_loss = prev_loss[1:] + [loss]
 
 
-			#convert categorical target variables to numbers
-			batch_y1 = np.array([number_dict[x] for x in batch_y1])
-			batch_y2 = np.array([number_dict[x] for x in batch_y2])
-
-			#train the network
-			summary, _, neg, pos, x1, o1, x2, o2 = sess.run([summary_op, siam.train, siam.neg, siam.pos, siam.x1, siam.o1, siam.x2, siam.o2], feed_dict={
-																	siam.x1: batch_x1,
-																	siam.x2: batch_x2,
-																	siam.y_: batch_y,
-																	siam.y1: batch_y1,
-																	siam.y2: batch_y2,
-																	siam.nrows: [len(batch_y1) + len(batch_y2)]
-																	})
-
-			#print("neg: {} \npos: {} \nx1: {} \no1: {} \nx2: {} \no2: {}".format(neg, pos, x1, o1, x2, o2))
+					summary_result, acc = sess.run([summary_op, siam.accuracy], feed_dict={
+																siam.x1: X_test1,
+																siam.x2: X_test2,
+																siam.y_: Y_test,
+																siam.y1: Y_test1,
+																siam.y2: Y_test2,
+																siam.nrows: [len(Y_test)*2]
+																})
 
 
-			#test the network
-			if step % 20 == 0:
+					print("Step: {0}, loss: {1:.2}, accuracy {2:.2}".format(step, loss, acc))
 
-				summary_result, acc = sess.run([summary_op, siam.accuracy], feed_dict={
-															siam.x1: batch_x1,
-															siam.x2: batch_x2,
-															siam.y_: batch_y,
-															siam.y1: batch_y1,
-															siam.y2: batch_y2,
-															siam.nrows: [len(batch_y1) + len(batch_y2)]
-															})
-
-				print("Step: ", step, ": accuracy = ", acc)
-
-				#write loss and accuracy to summary objects
-				train_writer.add_summary(summary, step)
-				test_writer.add_summary(summary_result, step)
+					#write loss and accuracy to summary objects
+					train_writer.add_summary(summary, step)
+					test_writer.add_summary(summary_result, step)
+			else:
+				pass
 
 		saver.save(sess, './model')
 
-		embed = siam.o1.eval({siam.x1: np.concatenate([batch_x1, batch_x2], axis=0)})
+		embed = siam.o1.eval({siam.x1: np.concatenate([X_test1, X_test2], axis=0)})
 
-		embed = pd.concat([pd.DataFrame(embed), pd.DataFrame(np.concatenate([batch_y1, batch_y2], axis=0))], axis=1)
-		plt.scatter(x=embed.iloc[:,0], y=embed.iloc[:,1], c=embed.iloc[:,2])
-		plt.plot()	
+		label_dict = {v: k for k, v in number_dict.items()}
+
+		targets = np.concatenate([Y_test1, Y_test2], axis=0)
+		targets = pd.Series(np.array([label_dict[x] for x in targets]))
+
+		embed = pd.concat([pd.DataFrame(embed), targets], axis=1)
 
 
 	pd.DataFrame(embed).to_csv("./embed.txt", header=False, index=False)
