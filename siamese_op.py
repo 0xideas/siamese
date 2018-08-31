@@ -30,7 +30,7 @@ class siamese:
 		#loss computed from the two outputs of the network and the main target
 		self.loss = self.loss_function()
 		#training function
-		self.train = tf.train.MomentumOptimizer(learning_rate, 0.05).minimize(self.loss)
+		self.train = tf.train.AdamOptimizer(learning_rate).minimize(self.loss)
 		self.accuracy = self.evaluate()
 
 
@@ -46,10 +46,7 @@ class siamese:
 
 			raw_out = tf.add(tf.matmul(input_layer, W), b)
 
-			if activation:
-				return( activation(raw_out))
-
-			return(raw_out)
+			return( activation(raw_out, name="my_output"))
 
 
 	def encoder(self, input_, output_size):
@@ -60,7 +57,9 @@ class siamese:
 
 		layer_2 = self.fc_layer(layer_1, "layer2", 40, tf.nn.relu)
 
-		encoded = self.fc_layer(layer_2, "output", output_size, tf.nn.relu)
+		layer_3 = self.fc_layer(layer_2, "layer3", 20, tf.nn.relu)
+
+		encoded = self.fc_layer(layer_3, "output", output_size, tf.nn.relu)
 
 		return(encoded)
 
@@ -159,6 +158,20 @@ def split_sample_contrastive(X, Y, number_dict):
 	return(x1, y1, x2, y2, y)
 
 
+def get_data(all_files):
+
+	files_ = np.random.choice(all_files, 50, False)
+	data_list = []
+	for file in files_:
+		data = pd.read_csv(os.path.join("/home/leon/Documents/projects/data/sports/data_three_back", file), header=None)
+		data = data.sample(n=20)
+
+		data_list += [data]
+
+	data = pd.concat(data_list, axis=0)
+
+	return(data)
+
 
 if __name__ == "__main__":
 
@@ -188,39 +201,41 @@ if __name__ == "__main__":
 		init = tf.global_variables_initializer()
 		sess.run(init)
 
-		test_persons = ["p1", "p3", "p6"]
+		
 
 		prev_loss = [50]*50
-		loss_threshold = 0
+		loss_threshold = -5
 		loss_delta, loss = 3, 50
+
+		for root, dirs, files in os.walk("/home/leon/Documents/projects/data/sports/data_three_back/"):
+			all_files = files
 
 		#train the network
 		np.random.seed(101)
-		for step in range(10000):
+		test_persons = ["a01", "a03", "a16", "a08"]
+		target_column = -2
+		for step in range(500):
 
 			if loss_delta > loss_threshold:
 
-				if step % 10 == 0:
-					for root, dirs, files in os.walk("/home/leon/Documents/projects/data/sports/data_three_back/"):
-						file = np.random.choice(files)
-						data = pd.read_csv(os.path.join(root, file), header=None)
+				if step % 20 == 0:
+					data = get_data(all_files)
+					while not all([x in data[:-2].values for x in test_persons]):
+						data = get_data(all_files)
 
-						while not any([x in data[:-1].values for x in test_persons]):
-							file = np.random.choice(files)
-							data = pd.read_csv(os.path.join(root, file), header=None)
 
 					#separate data into train and test sets
-					test_ind = np.array([x in test_persons for x in data.iloc[:,-1].values])
+					test_ind = np.array([x in test_persons for x in data.iloc[:,target_column].values])
 
 					#creating test data and target objects
 					test = data[test_ind]
 					X_test = test.iloc[:,:-2]
-					Y_test = test.iloc[:,-1]
+					Y_test = test.iloc[:,target_column]
 
 					train = data[test_ind == False]
 
 					X_train = train.iloc[:,:-2]
-					Y_train = train.iloc[:,-1]
+					Y_train = train.iloc[:,target_column]
 
 					Y_values = list(set(np.concatenate([Y_train.values, Y_test.values])))
 					number_dict = {x:y for x,y in zip(Y_values, range(len(Y_values)))}
@@ -228,7 +243,7 @@ if __name__ == "__main__":
 					X_test1, Y_test1, X_test2, Y_test2, Y_test = split_sample_contrastive(X_test, Y_test, number_dict)
 
 				X_train = train.iloc[:,:-2]
-				Y_train = train.iloc[:,-1]
+				Y_train = train.iloc[:,target_column]
 				X_train1, Y_train1, X_train2, Y_train2, Y_train = split_sample_contrastive(X_train, Y_train, number_dict)
 
 				#train the network
