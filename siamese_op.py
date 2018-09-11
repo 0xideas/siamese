@@ -181,27 +181,29 @@ if __name__ == "__main__":
 
 	#start tensorflow session
 	sess = tf.Session()
+
+
+	tf.set_random_seed(1234)
+
+
+	#initialise siamese network with learning rate
+	siam = siamese(0.01)
+	saver = tf.train.Saver()
+
+
+
+
 	with sess.as_default():
+		tf.global_variables_initializer().run()
 
-		tf.set_random_seed(1234)
-
-
-		#initialise siamese network with learning rate
-		siam = siamese(0.01)
+		#saver.restore(sess, './model')
+		
 
 		#initialise tensorflow summary writers
 		train_writer = tf.summary.FileWriter(os.path.join(LOGDIR, "train"), sess.graph)
 		test_writer = tf.summary.FileWriter(os.path.join(LOGDIR, "test"), sess.graph)
 
 		summary_op = tf.summary.merge_all()
-
-		saver = tf.train.Saver()
-
-		#initialise variables
-		init = tf.global_variables_initializer()
-		sess.run(init)
-
-		
 
 		prev_loss = [50]*50
 		loss_threshold = -5
@@ -212,20 +214,20 @@ if __name__ == "__main__":
 
 		#train the network
 		np.random.seed(101)
-		test_persons = ["a01", "a03", "a16", "a08"]
+		test_activities = ["a19"]
 		target_column = -2
-		for step in range(500):
+		for step in range(5000):
 
 			if loss_delta > loss_threshold:
 
 				if step % 20 == 0:
 					data = get_data(all_files)
-					while not all([x in data[:-2].values for x in test_persons]):
+					while not all([x in data[:-2].values for x in test_activities]):
 						data = get_data(all_files)
 
 
 					#separate data into train and test sets
-					test_ind = np.array([x in test_persons for x in data.iloc[:,target_column].values])
+					test_ind = np.array([x in test_activities for x in data.iloc[:,target_column].values])
 
 					#creating test data and target objects
 					test = data[test_ind]
@@ -301,6 +303,3 @@ if __name__ == "__main__":
 	train_writer.close()
 	test_writer.close()
 	sess.close()
-
-
-

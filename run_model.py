@@ -15,7 +15,7 @@ if __name__ == '__main__':
 
 
 	with sess.as_default():
-		np.random.seed(101)
+		np.random.seed(105)
 		files_ = []
 		for root, dirs, files in os.walk("/home/leon/Documents/projects/data/sports/data_three_back/"):
 			files_ = np.random.choice(files, 200, False)
@@ -30,8 +30,9 @@ if __name__ == '__main__':
 
 		data = pd.concat(data_list, axis=0)
 
+		test_activities = ["a19"]
 
-		#data = data[[x in ["a01", "a03", "a16", "a08"] for x in data.iloc[:,-2]]]
+		#data = data[[x not in test_activities for x in data.iloc[:,-2]]]
 
 		embed = siam.o1.eval({siam.x1: data.iloc[:,:-2]})
 
